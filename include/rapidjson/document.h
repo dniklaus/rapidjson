@@ -22,6 +22,8 @@
 #include "internal/strfunc.h"
 #include "memorystream.h"
 #include "encodedstream.h"
+
+#include <algorithm>
 #include <new>      // placement new
 #include <limits>
 #ifdef __cpp_lib_three_way_comparison
@@ -119,6 +121,9 @@ class GenericDocument;
 template <typename Encoding, typename Allocator> 
 class GenericMember {
 public:
+    // Allow default construction as it is needed during copying.
+    GenericMember() = default;
+
     GenericValue<Encoding, Allocator> name;     //!< name of member (must be a string)
     GenericValue<Encoding, Allocator> value;    //!< value of member.
 
@@ -2402,9 +2407,11 @@ private:
     void SetArrayRaw(GenericValue* values, SizeType count, Allocator& allocator) {
         data_.f.flags = kArrayFlag;
         if (count) {
-            GenericValue* e = static_cast<GenericValue*>(allocator.Malloc(count * sizeof(GenericValue)));
-            SetElementsPointer(e);
-            std::memcpy(static_cast<void*>(e), values, count * sizeof(GenericValue));
+            auto arr = static_cast<GenericValue*>(allocator.Malloc(count * sizeof(GenericValue)));
+            for (SizeType idx = 0; idx < count; ++idx)
+                new (arr + idx) GenericValue;
+            SetElementsPointer(arr);
+            std::copy_n(values, count, arr);
         }
         else
             SetElementsPointer(0);
@@ -2415,16 +2422,11 @@ private:
     void SetObjectRaw(Member* members, SizeType count, Allocator& allocator) {
         data_.f.flags = kObjectFlag;
         if (count) {
-            Member* m = DoAllocMembers(count, allocator);
-            SetMembersPointer(m);
-            std::memcpy(static_cast<void*>(m), members, count * sizeof(Member));
-#if RAPIDJSON_USE_MEMBERSMAP
-            Map* &map = GetMap(m);
-            MapIterator* mit = GetMapIterators(map);
-            for (SizeType i = 0; i < count; i++) {
-                new (&mit[i]) MapIterator(map->insert(MapPair(m[i].name.data_, i)));
-            }
-#endif
+            auto arr = static_cast<Member*>(allocator.Malloc(count * sizeof(Member)));
+            for (SizeType idx = 0; idx < count; ++idx)
+                new (arr + idx) Member;
+            SetMembersPointer(arr);
+            std::copy_n(members, count, arr);
         }
         else
             SetMembersPointer(0);
